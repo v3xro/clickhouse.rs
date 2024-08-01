@@ -69,6 +69,7 @@ hyper-rustls = { version = "0.27.2", features = ["webpki-roots"], optional = tru
 url = "2.1.1"
 futures = "0.3.5"
 futures-channel = "0.3.30"
+async-stream = "0.3.5"
 static_assertions = "1.1"
 sealed = "0.5"
 sha-1 = { version = "0.10", optional = true }
