@@ -211,6 +211,30 @@ pub mod time {
             }
         }
 
+        /// Ser/de `OffsetDateTime` to/form `DateTime64(7)`
+        pub mod microsub {
+            use super::*;
+
+            option!(
+                OffsetDateTime,
+                "Ser/de `Option<OffsetDateTime>` to/from `Nullable(DateTime64(7))`."
+            );
+
+            pub fn serialize<S>(dt: &OffsetDateTime, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                do_serialize(dt, 100, serializer)
+            }
+
+            pub fn deserialize<'de, D>(deserializer: D) -> Result<OffsetDateTime, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                do_deserialize(deserializer, 100)
+            }
+        }
+
         /// Ser/de `OffsetDateTime` to/from `DateTime64(9)`.
         pub mod nanos {
             use super::*;
