@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use bytes::Bytes;
-use futures::TryStreamExt;
+use futures::{StreamExt, TryStreamExt};
 use serde::Deserialize;
 
 use crate::{
@@ -29,43 +29,50 @@ impl RawCursor {
     }
 
     #[inline(always)]
-    async fn next<T>(
-        &mut self,
-        mut f: impl FnMut(&mut BufList<Bytes>) -> ControlFlow<T>,
-    ) -> Result<Option<T>> {
+    async fn next<'de, 's, 'b, T, F>(
+        &'s mut self,
+        mut f: F,
+    ) -> Result<Option<T>> where T: 'de, 's: 'b, F: FnMut(&'b mut BufList<Bytes>) -> ControlFlow<T> {
         let chunks = if let Some(chunks) = self.response.chunks() {
             chunks
         } else {
             self.response.chunks_slow().await?
         };
 
+        let mut pending = &mut self.pending;
         loop {
-            match f(&mut self.pending) {
+            let res = f(pending);
+            match res {
                 ControlFlow::Yield(value) => {
-                    self.pending.commit();
+                    pending.commit();
                     return Ok(Some(value));
                 }
                 #[cfg(feature = "watch")]
                 ControlFlow::Skip => {
-                    self.pending.commit();
+                    pending.commit();
                     continue;
                 }
                 ControlFlow::Retry => {
-                    self.pending.rollback();
+                    pending.rollback();
                     continue;
                 }
                 ControlFlow::Err(Error::NotEnoughData) => {
-                    self.pending.rollback();
+                    pending.rollback();
                 }
                 ControlFlow::Err(err) => return Err(err),
             }
 
             match chunks.try_next().await? {
-                Some(chunk) => self.pending.push(chunk),
+                Some(chunk) => pending.push(chunk),
                 None if self.pending.bufs_cnt() > 0 => return Err(Error::NotEnoughData),
                 None => return Ok(None),
             }
         }
+    }
+
+    #[inline(always)]
+    fn process_inner() {
+
     }
 }
 
@@ -101,27 +108,39 @@ impl<T> RowBinaryCursor<T> {
         }
     }
 
-    pub(crate) async fn next<'a, 'b: 'a>(&'a mut self) -> Result<Option<T>>
+    pub(crate) async fn next<'s, 'de, 'x>(&'s mut self) -> Result<Option<T>>
     where
-        T: Deserialize<'b>,
+        T: Deserialize<'de> + 'de, 's : 'x, 'x : 'de
     {
-        let buffer = &mut self.buffer;
-
+        let mut buffer: &'s mut [u8] = &mut self.buffer;
         self.raw
-            .next(|pending| {
-                match rowbinary::deserialize_from(pending, &mut workaround_51132(buffer)[..]) {
+            .next(|pending: &'x mut _| {
+                match rowbinary::deserialize_from(pending, buffer) {
                     Ok(value) => ControlFlow::Yield(value),
                     Err(Error::TooSmallBuffer(need)) => {
-                        let new_len = (buffer.len() + need)
-                            .checked_next_power_of_two()
-                            .expect("oom");
-                        buffer.resize(new_len, 0);
+                        // FIXME reenable
+                        // let new_len = (self.buffer.len() + need)
+                        //     .checked_next_power_of_two()
+                        //     .expect("oom");
+                        // self.buffer.resize(new_len, 0);
                         ControlFlow::Retry
                     }
                     Err(err) => ControlFlow::Err(err),
                 }
             })
             .await
+    }
+
+    #[inline]
+    fn process_next<'buf, 'de, 'x>(
+        buffer: &'buf mut Vec<u8>,
+        pending: &'x mut BufList<Bytes>,
+    ) -> Result<T>
+    where
+        T: Deserialize<'de> + 'de,
+        'buf: 'de,
+    {
+        rowbinary::deserialize_from(pending, buffer)
     }
 }
 
