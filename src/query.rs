@@ -5,13 +5,13 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::{
+    Client,
     cursor::RowBinaryCursor,
     error::{Error, Result},
     request_body::RequestBody,
     response::Response,
     row::Row,
     sql::{Bind, SqlBuilder},
-    Client,
 };
 
 const MAX_QUERY_LEN_TO_USE_GET: usize = 8192;
@@ -197,10 +197,8 @@ impl<T> RowCursor<T> {
         self.0.next().await
     }
 
-    pub fn stream<'a, 'b: 'a>(&'a mut self) -> impl Stream<Item = Result<T>> + 'a
-    where
-        T: Deserialize<'b>,
-    {
+    pub fn stream<'a, 'b: 'a>(&'a mut self) -> impl Stream<Item = Result<T>> + 'a where
+        T: Deserialize<'b> {
         try_stream! {
             while let Some(value) = self.0.next().await? {
                 yield value;
@@ -208,11 +206,8 @@ impl<T> RowCursor<T> {
         }
     }
 
-    pub fn into_stream<'a>(mut self) -> impl Stream<Item = Result<T>> + 'a
-    where
-        T: Deserialize<'a>,
-        T: 'a,
-    {
+    pub fn into_stream<'a>(mut self) -> impl Stream<Item = Result<T>> + 'a where
+        T: Deserialize<'a>, T: 'a {
         try_stream! {
             while let Some(value) = self.0.next().await? {
                 yield value;
