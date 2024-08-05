@@ -93,4 +93,4 @@ time = { version = "0.3.17", features = ["macros", "rand"] }
 rand = "0.8.5"
 
 [build]
-rustflags = ["-Znext-solver=globally"]
+rustflags = ["-Zpolonius"]

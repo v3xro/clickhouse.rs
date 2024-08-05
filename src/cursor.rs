@@ -39,40 +39,34 @@ impl RawCursor {
             self.response.chunks_slow().await?
         };
 
-        let mut pending = &mut self.pending;
         loop {
-            let res = f(pending);
+            let res = f(&mut self.pending);
             match res {
                 ControlFlow::Yield(value) => {
-                    pending.commit();
+                    self.pending.commit();
                     return Ok(Some(value));
                 }
                 #[cfg(feature = "watch")]
                 ControlFlow::Skip => {
-                    pending.commit();
+                    self.pending.commit();
                     continue;
                 }
                 ControlFlow::Retry => {
-                    pending.rollback();
+                    self.pending.rollback();
                     continue;
                 }
                 ControlFlow::Err(Error::NotEnoughData) => {
-                    pending.rollback();
+                    self.pending.rollback();
                 }
                 ControlFlow::Err(err) => return Err(err),
             }
 
             match chunks.try_next().await? {
-                Some(chunk) => pending.push(chunk),
+                Some(chunk) => self.pending.push(chunk),
                 None if self.pending.bufs_cnt() > 0 => return Err(Error::NotEnoughData),
                 None => return Ok(None),
             }
         }
-    }
-
-    #[inline(always)]
-    fn process_inner() {
-
     }
 }
 
@@ -108,13 +102,13 @@ impl<T> RowBinaryCursor<T> {
         }
     }
 
-    pub(crate) async fn next<'s, 'de, 'x>(&'s mut self) -> Result<Option<T>>
+    pub(crate) async fn next<'s, 'de>(&'s mut self) -> Result<Option<T>>
     where
-        T: Deserialize<'de> + 'de, 's : 'x, 'x : 'de
+        T: Deserialize<'de> + 'de, 's : 'de
     {
         let mut buffer: &'s mut [u8] = &mut self.buffer;
         self.raw
-            .next(|pending: &'x mut _| {
+            .next(|pending| {
                 match rowbinary::deserialize_from(pending, buffer) {
                     Ok(value) => ControlFlow::Yield(value),
                     Err(Error::TooSmallBuffer(need)) => {

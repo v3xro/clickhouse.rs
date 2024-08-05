@@ -190,31 +190,20 @@ pub struct RowCursor<T>(RowBinaryCursor<T>);
 
 impl<T> RowCursor<T> {
     /// Emits the next row.
-    pub async fn next<'a, 'b: 'a>(&'a mut self) -> Result<Option<T>>
+    pub async fn next<'a>(&'a mut self) -> Result<Option<T>>
     where
-        T: Deserialize<'b>,
+        T: Deserialize<'a>,
     {
         self.0.next().await
     }
 
-    pub fn stream<'a, 'b: 'a>(&'a mut self) -> impl Stream<Item = Result<T>> + 'a
+    pub fn stream<'de, 's: 'de>(&'s mut self) -> impl Stream<Item = Result<T>> + 'de
     where
-        T: Deserialize<'b>,
+        T: Deserialize<'de>,
     {
         try_stream! {
-            while let Some(value) = self.0.next().await? {
-                yield value;
-            }
-        }
-    }
-
-    pub fn into_stream<'a>(mut self) -> impl Stream<Item = Result<T>> + 'a
-    where
-        T: Deserialize<'a>,
-        T: 'a,
-    {
-        try_stream! {
-            while let Some(value) = self.0.next().await? {
+            let mut cursor: &mut RowBinaryCursor<T> = &mut self.0;
+            while let Some(value) = cursor.next().await? {
                 yield value;
             }
         }
